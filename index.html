@@ -225,6 +225,7 @@
       <li>Được sử dụng tài liệu. Giảng viên có thể hỏi lại trực tiếp về bài làm.</li>
       <li>Câu trả lời phải gõ trực tiếp; không dán được nội dung từ nơi khác.</li>
       <li>Nếu mất mạng hoặc tải lại trang, nhập lại mã sinh viên để làm tiếp.</li>
+      <li>Trên máy tính, bài thi chạy ở chế độ toàn màn hình. Thoát toàn màn hình, chia đôi màn hình hoặc chuyển sang cửa sổ khác thì đề bị ẩn và được ghi lại.</li>
     </ul>
   </div>
   </div>
@@ -319,6 +320,7 @@ $("f-ma").addEventListener("input", (e) => { e.target.value = e.target.value.rep
 
 $("login-form").addEventListener("submit", async (e) => {
   e.preventDefault();
+  enterFullscreen(); // phải gọi trong lúc bấm nút (trình duyệt chỉ cho vào toàn màn hình từ thao tác người dùng)
   const ma = $("f-ma").value.trim();
   showErr("e-form", "");
   if (!/^\d{6,12}$/.test(ma)) return showErr("e-ma", "Nhập mã sinh viên của bạn (chỉ gồm chữ số).");
@@ -556,7 +558,31 @@ function setWatermark(text) {
   const wm = $("wm"); wm.style.backgroundImage = `url("data:image/svg+xml;utf8,${encodeURIComponent(svg).replace(/%2523/g, "%23")}")`;
   wm.classList.remove("hidden");
 }
-function shield(on) { if (!submitted) $("shield").classList.toggle("hidden", !on); }
+// Bố cục hợp lệ: máy tính phải toàn màn hình; mọi thiết bị: cửa sổ không bị thu nhỏ / chia đôi màn hình.
+const IS_DESKTOP = matchMedia("(pointer: fine)").matches;
+const FS_MSG = "Bài thi chỉ hiển thị ở chế độ toàn màn hình.<br>Bấm vào đây để vào lại toàn màn hình.";
+const SPLIT_MSG = "Bài thi chỉ hiển thị khi cửa sổ trình duyệt chiếm toàn màn hình (không chia đôi, không thu nhỏ).";
+const BLUR_MSG = "Nội dung bài thi được ẩn khi bạn rời cửa sổ này.<br>Bấm vào đây để làm tiếp.";
+function layoutProblem() {
+  if (IS_DESKTOP && document.fullscreenEnabled && !document.fullscreenElement) return "fs";
+  const small = IS_DESKTOP
+    ? window.outerWidth < screen.availWidth * 0.9 || window.outerHeight < screen.availHeight * 0.85
+    : window.innerWidth * window.innerHeight < 0.6 * screen.width * screen.height;
+  return small ? "split" : "";
+}
+function shield(on, msg) {
+  if (submitted) return;
+  const prob = layoutProblem();
+  if (!on && prob) { on = true; msg = prob === "fs" ? FS_MSG : SPLIT_MSG; } // không mở lại đề khi bố cục chưa hợp lệ
+  $("shield").querySelector("p").innerHTML = msg || BLUR_MSG;
+  $("shield").classList.toggle("hidden", !on);
+}
+function checkLayout() {
+  const prob = layoutProblem();
+  if (prob && !submitted) { logEvent(prob === "fs" ? "fullscreen_exit" : "split_screen", { w: window.outerWidth, h: window.outerHeight }); shield(true, prob === "fs" ? FS_MSG : SPLIT_MSG); }
+  else if (!prob && document.hasFocus()) shield(false);
+}
+function enterFullscreen() { if (IS_DESKTOP && document.fullscreenEnabled && !document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {}); }
 function startGuards() {
   const block = (e, t) => { e.preventDefault(); logEvent(t); };
   ["copy", "cut"].forEach((ev) => document.addEventListener(ev, (e) => block(e, ev + "_blocked")));
@@ -566,6 +592,10 @@ function startGuards() {
   document.addEventListener("contextmenu", (e) => block(e, "menu_blocked"));
   document.addEventListener("keydown", (e) => {
     const k = (e.key || "").toLowerCase(), mod = e.ctrlKey || e.metaKey;
+    // Phím tắt chụp màn hình cấp hệ điều hành (Zalo Ctrl+Alt+S, Win+Shift+S…) không tới được trang,
+    // nhưng phím bổ trợ thì tới: che đề ngay khi giữ Ctrl+Alt hoặc phím Windows/Cmd. (Không che Ctrl+Shift: Unikey dùng.)
+    if ((e.ctrlKey && e.altKey) || k === "meta" || k === "os") { shield(true); logEvent("modifier_hide", { k: e.key }); }
+    if (k === "f12" || (mod && e.shiftKey && ["i", "j", "c"].includes(k))) { block(e, "devtools_key"); return; }
     // Ctrl+Shift+S (Edge Web capture, Firefox Screenshot), Cmd+Shift+3/4/5 (macOS): chặn nếu trình duyệt cho phép và che đề ngay.
     if (mod && e.shiftKey && ["s", "3", "4", "5"].includes(k)) { shield(true); block(e, "screenshot_key"); return; }
     if (mod && ["c", "x", "v", "p", "s", "u"].includes(k)) block(e, "key_" + k);
@@ -577,7 +607,10 @@ function startGuards() {
   // Che đề khi cửa sổ mất tiêu điểm: Win+Shift+S / Snipping Tool / chuyển cửa sổ. Không chặn việc chuyển cửa sổ.
   window.addEventListener("blur", () => { if (!submitted && !$("dlg-submit").open) { shield(true); logEvent("blur"); } });
   window.addEventListener("focus", () => shield(false));
-  $("shield").addEventListener("click", () => shield(false));
+  $("shield").addEventListener("click", () => { enterFullscreen(); shield(false); });
+  document.addEventListener("fullscreenchange", checkLayout);
+  window.addEventListener("resize", checkLayout);
+  checkLayout();
   window.addEventListener("beforeprint", () => logEvent("print"));
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) { hiddenAt = Date.now(); logEvent("hidden"); if (dirty) doSave(false, { keepalive: true }); }
