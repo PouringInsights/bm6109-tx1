@@ -563,7 +563,28 @@ const IS_DESKTOP = matchMedia("(pointer: fine)").matches;
 const FS_MSG = "Bài thi chỉ hiển thị ở chế độ toàn màn hình.<br>Bấm vào đây để vào lại toàn màn hình.";
 const SPLIT_MSG = "Bài thi chỉ hiển thị khi cửa sổ trình duyệt chiếm toàn màn hình (không chia đôi, không thu nhỏ).";
 const BLUR_MSG = "Nội dung bài thi được ẩn khi bạn rời cửa sổ này.<br>Bấm vào đây để làm tiếp.";
+const PROB_MSG = { fs: FS_MSG, split: SPLIT_MSG, tab: TAB_MSG };
+// Phát hiện bài thi mở ở nhiều tab: các tab báo hiệu cho nhau 2 giây/lần qua BroadcastChannel.
+const TAB_MSG = "Bài thi đang mở ở một tab khác.<br>Đóng các tab còn lại để tiếp tục làm bài.";
+const TAB_ID = Math.random().toString(36).slice(2), otherTabs = new Map();
+let tabChan = null;
+function startTabGuard() {
+  if (!("BroadcastChannel" in window)) return;
+  tabChan = new BroadcastChannel(LS_TOKEN + "_tabs");
+  tabChan.onmessage = (e) => {
+    if (!e.data || e.data.id === TAB_ID) return;
+    if (!otherTabs.size) logEvent("multi_tab");
+    otherTabs.set(e.data.id, Date.now()); checkLayout();
+  };
+  const beat = () => {
+    tabChan.postMessage({ id: TAB_ID });
+    for (const [id, t] of otherTabs) if (Date.now() - t > 5000) otherTabs.delete(id);
+    checkLayout();
+  };
+  beat(); setInterval(beat, 2000);
+}
 function layoutProblem() {
+  if (otherTabs.size) return "tab";
   if (IS_DESKTOP && document.fullscreenEnabled && !document.fullscreenElement) return "fs";
   const small = IS_DESKTOP
     ? window.outerWidth < screen.availWidth * 0.9 || window.outerHeight < screen.availHeight * 0.85
@@ -573,14 +594,18 @@ function layoutProblem() {
 function shield(on, msg) {
   if (submitted) return;
   const prob = layoutProblem();
-  if (!on && prob) { on = true; msg = prob === "fs" ? FS_MSG : SPLIT_MSG; } // không mở lại đề khi bố cục chưa hợp lệ
+  if (!on && prob) { on = true; msg = PROB_MSG[prob]; } // không mở lại đề khi bố cục chưa hợp lệ
   $("shield").querySelector("p").innerHTML = msg || BLUR_MSG;
   $("shield").classList.toggle("hidden", !on);
 }
 function checkLayout() {
   const prob = layoutProblem();
-  if (prob && !submitted) { logEvent(prob === "fs" ? "fullscreen_exit" : "split_screen", { w: window.outerWidth, h: window.outerHeight }); shield(true, prob === "fs" ? FS_MSG : SPLIT_MSG); }
-  else if (!prob && document.hasFocus()) shield(false);
+  const shown = !$("shield").classList.contains("hidden");
+  if (prob && !submitted) {
+    if (!(shown && $("shield").querySelector("p").innerHTML === PROB_MSG[prob]) && prob !== "tab")
+      logEvent(prob === "fs" ? "fullscreen_exit" : "split_screen", { w: window.outerWidth, h: window.outerHeight });
+    shield(true, PROB_MSG[prob]);
+  } else if (!prob && shown && $("shield").querySelector("p").innerHTML !== BLUR_MSG && document.hasFocus()) shield(false);
 }
 function enterFullscreen() { if (IS_DESKTOP && document.fullscreenEnabled && !document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {}); }
 function startGuards() {
@@ -609,6 +634,7 @@ function startGuards() {
   window.addEventListener("focus", () => shield(false));
   $("shield").addEventListener("click", () => { enterFullscreen(); shield(false); });
   document.addEventListener("fullscreenchange", checkLayout);
+  startTabGuard();
   window.addEventListener("resize", checkLayout);
   checkLayout();
   window.addEventListener("beforeprint", () => logEvent("print"));
