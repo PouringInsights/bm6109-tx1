@@ -563,9 +563,9 @@ const IS_DESKTOP = matchMedia("(pointer: fine)").matches;
 const FS_MSG = "Bài thi chỉ hiển thị ở chế độ toàn màn hình.<br>Bấm vào đây để vào lại toàn màn hình.";
 const SPLIT_MSG = "Bài thi chỉ hiển thị khi cửa sổ trình duyệt chiếm toàn màn hình (không chia đôi, không thu nhỏ).";
 const BLUR_MSG = "Nội dung bài thi được ẩn khi bạn rời cửa sổ này.<br>Bấm vào đây để làm tiếp.";
-const PROB_MSG = { fs: FS_MSG, split: SPLIT_MSG, tab: TAB_MSG };
 // Phát hiện bài thi mở ở nhiều tab: các tab báo hiệu cho nhau 2 giây/lần qua BroadcastChannel.
 const TAB_MSG = "Bài thi đang mở ở một tab khác.<br>Đóng các tab còn lại để tiếp tục làm bài.";
+const PROB_MSG = { fs: FS_MSG, split: SPLIT_MSG, tab: TAB_MSG };
 const TAB_ID = Math.random().toString(36).slice(2), otherTabs = new Map();
 let tabChan = null;
 function startTabGuard() {
